@@ -117,6 +117,86 @@
 			wd[x][y] += ((double *)input)[x] * ((double *)outerror)[y];			\
 }
 
+// CUDA Implementation for CONVOLUTION_FORWARD
+#include <cuda_runtime.h>
+#include <stdio.h>
+#include "lenet.h"
+
+#define BLOCK_SIZE 16 // Define block size for CUDA threads
+
+__global__ void convolution_forward_kernel(
+    double *input, double *output, double *weight, double *bias,
+    int input_channels, int input_size, int output_channels, int output_size, int kernel_size
+) {
+    int out_x = blockIdx.x * blockDim.x + threadIdx.x;
+    int out_y = blockIdx.y * blockDim.y + threadIdx.y;
+    int out_channel = blockIdx.z;
+
+    if (out_x < output_size && out_y < output_size) {
+        double sum = bias[out_channel];
+
+        for (int in_channel = 0; in_channel < input_channels; ++in_channel) {
+            for (int kx = 0; kx < kernel_size; ++kx) {
+                for (int ky = 0; ky < kernel_size; ++ky) {
+                    int in_x = out_x + kx;
+                    int in_y = out_y + ky;
+
+                    sum += input[in_channel * input_size * input_size + in_x * input_size + in_y] *
+                           weight[out_channel * input_channels * kernel_size * kernel_size +
+                                  in_channel * kernel_size * kernel_size + kx * kernel_size + ky];
+                }
+            }
+        }
+
+        output[out_channel * output_size * output_size + out_x * output_size + out_y] = sum;
+    }
+}
+
+void CONVOLUTION_FORWARD_CUDA(
+    double *input, double *output, double *weight, double *bias,
+    int input_channels, int input_size, int output_channels, int output_size, int kernel_size
+) {
+    double *d_input, *d_output, *d_weight, *d_bias;
+
+    size_t input_size_bytes = input_channels * input_size * input_size * sizeof(double);
+    size_t output_size_bytes = output_channels * output_size * output_size * sizeof(double);
+    size_t weight_size_bytes = output_channels * input_channels * kernel_size * kernel_size * sizeof(double);
+    size_t bias_size_bytes = output_channels * sizeof(double);
+
+    // Allocate device memory
+    cudaMalloc((void **)&d_input, input_size_bytes);
+    cudaMalloc((void **)&d_output, output_size_bytes);
+    cudaMalloc((void **)&d_weight, weight_size_bytes);
+    cudaMalloc((void **)&d_bias, bias_size_bytes);
+
+    // Copy data to device
+    cudaMemcpy(d_input, input, input_size_bytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_weight, weight, weight_size_bytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_bias, bias, bias_size_bytes, cudaMemcpyHostToDevice);
+
+    // Define CUDA grid and block dimensions
+    dim3 blockDim(BLOCK_SIZE, BLOCK_SIZE);
+    dim3 gridDim((output_size + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                 (output_size + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                 output_channels);
+
+    // Launch kernel
+    convolution_forward_kernel<<<gridDim, blockDim>>>(
+        d_input, d_output, d_weight, d_bias,
+        input_channels, input_size, output_channels, output_size, kernel_size
+    );
+
+    // Copy result back to host
+    cudaMemcpy(output, d_output, output_size_bytes, cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(d_input);
+    cudaFree(d_output);
+    cudaFree(d_weight);
+    cudaFree(d_bias);
+}
+
+
 double relu(double x)
 {
 	return x*(x > 0);
@@ -129,11 +209,23 @@ double relugrad(double y)
 
 static void forward(LeNet5 *lenet, Feature *features, double(*action)(double))
 {
-	CONVOLUTION_FORWARD(features->input, features->layer1, lenet->weight0_1, lenet->bias0_1, action);
+	CONVOLUTION_FORWARD_CUDA(
+    (double *)features->input, (double *)features->layer1, 
+    (double *)lenet->weight0_1, (double *)lenet->bias0_1,
+    INPUT_CHANNELS, INPUT_SIZE, LAYER1_CHANNELS, LAYER1_SIZE, KERNEL_SIZE
+);
 	SUBSAMP_MAX_FORWARD(features->layer1, features->layer2);
-	CONVOLUTION_FORWARD(features->layer2, features->layer3, lenet->weight2_3, lenet->bias2_3, action);
+	CONVOLUTION_FORWARD_CUDA(
+    (double *)features->input, (double *)features->layer2, 
+    (double *)lenet->weight2_3, (double *)lenet->bias2_3,
+    INPUT_CHANNELS, INPUT_SIZE, LAYER2_CHANNELS, LAYER2_SIZE, KERNEL_SIZE
+);
 	SUBSAMP_MAX_FORWARD(features->layer3, features->layer4);
-	CONVOLUTION_FORWARD(features->layer4, features->layer5, lenet->weight4_5, lenet->bias4_5, action);
+	CONVOLUTION_FORWARD_CUDA(
+    (double *)features->input, (double *)features->layer4, 
+    (double *)lenet->weight4_5, (double *)lenet->bias4_5,
+    INPUT_CHANNELS, INPUT_SIZE, LAYER4_CHANNELS, LAYER4_SIZE, KERNEL_SIZE
+);
 	DOT_PRODUCT_FORWARD(features->layer5, features->output, lenet->weight5_6, lenet->bias5_6, action);
 }
 
