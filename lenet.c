@@ -207,27 +207,36 @@ double relugrad(double y)
 	return y > 0;
 }
 
-static void forward(LeNet5 *lenet, Feature *features, double(*action)(double))
-{
-	CONVOLUTION_FORWARD_CUDA(
-    (double *)features->input, (double *)features->layer1, 
-    (double *)lenet->weight0_1, (double *)lenet->bias0_1,
-    INPUT_CHANNELS, INPUT_SIZE, LAYER1_CHANNELS, LAYER1_SIZE, KERNEL_SIZE
-);
-	SUBSAMP_MAX_FORWARD(features->layer1, features->layer2);
-	CONVOLUTION_FORWARD_CUDA(
-    (double *)features->input, (double *)features->layer2, 
-    (double *)lenet->weight2_3, (double *)lenet->bias2_3,
-    INPUT_CHANNELS, INPUT_SIZE, LAYER2_CHANNELS, LAYER2_SIZE, KERNEL_SIZE
-);
-	SUBSAMP_MAX_FORWARD(features->layer3, features->layer4);
-	CONVOLUTION_FORWARD_CUDA(
-    (double *)features->input, (double *)features->layer4, 
-    (double *)lenet->weight4_5, (double *)lenet->bias4_5,
-    INPUT_CHANNELS, INPUT_SIZE, LAYER4_CHANNELS, LAYER4_SIZE, KERNEL_SIZE
-);
-	DOT_PRODUCT_FORWARD(features->layer5, features->output, lenet->weight5_6, lenet->bias5_6, action);
+static void forward(LeNet5 *lenet, Feature *features, double(*action)(double)) {
+    // First convolutional layer
+    CONVOLUTION_FORWARD_CUDA(
+        (double *)features->input, (double *)features->layer1, 
+        (double *)lenet->weight0_1, (double *)lenet->bias0_1,
+        INPUT_CHANNELS, INPUT_SIZE, LAYER1_CHANNELS, LAYER1_SIZE, KERNEL_SIZE
+    );
+    SUBSAMP_MAX_FORWARD(features->layer1, features->layer2);
+
+    // Second convolutional layer
+    CONVOLUTION_FORWARD_CUDA(
+        (double *)features->layer2, (double *)features->layer3, 
+        (double *)lenet->weight2_3, (double *)lenet->bias2_3,
+        LAYER1_CHANNELS, LAYER1_SIZE, LAYER2_CHANNELS, LAYER2_SIZE, KERNEL_SIZE
+    );
+    SUBSAMP_MAX_FORWARD(features->layer3, features->layer4);
+
+    // Third convolutional layer
+    CONVOLUTION_FORWARD_CUDA(
+        (double *)features->layer4, (double *)features->layer5, 
+        (double *)lenet->weight4_5, (double *)lenet->bias4_5,
+        LAYER2_CHANNELS, LAYER2_SIZE, LAYER4_CHANNELS, LAYER4_SIZE, KERNEL_SIZE
+    );
+
+    // Fully connected layer
+    DOT_PRODUCT_FORWARD(
+        features->layer5, features->output, lenet->weight5_6, lenet->bias5_6, action
+    );
 }
+
 
 
 static void backward(LeNet5 *lenet, LeNet5 *deltas, Feature *errors, Feature *features, double(*actiongrad)(double))
