@@ -36,6 +36,18 @@ void Initial(LeNet5 *lenet);
 #define LAYER5			120
 #define OUTPUT          10
 
+
+#define INPUT_CHANNELS 1       // Number of input channels (e.g., grayscale images)
+#define INPUT_SIZE 32          // Size of input image (e.g., 32x32 pixels)
+#define LAYER1_CHANNELS 6      // Number of feature maps in layer 1
+#define LAYER1_SIZE 28         // Size of layer 1 output (after convolution)
+#define LAYER2_CHANNELS 16     // Number of feature maps in layer 2
+#define LAYER2_SIZE 14         // Size of layer 2 output (after pooling)
+#define LAYER4_CHANNELS 120    // Number of feature maps in layer 4
+#define LAYER4_SIZE 1          // Size of layer 4 output
+#define KERNEL_SIZE 5          // Kernel size (5x5)
+
+
 #define ALPHA 0.5
 #define PADDING 2
 
