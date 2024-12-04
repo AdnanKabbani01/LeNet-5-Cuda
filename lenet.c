@@ -3,6 +3,8 @@
 #include <time.h>
 #include <stdlib.h>
 #include <math.h>
+#include <cuda_runtime.h>
+#include <stdio.h>
 
 #define GETLENGTH(array) (sizeof(array)/sizeof(*(array)))
 
@@ -118,11 +120,15 @@
 }
 
 // CUDA Implementation for CONVOLUTION_FORWARD
-#include <cuda_runtime.h>
-#include <stdio.h>
-#include "lenet.h"
 
 #define BLOCK_SIZE 16 // Define block size for CUDA threads
+
+// CUDA Error Checking Macro
+#define CHECK_CUDA_CALL(call) \
+    if ((call) != cudaSuccess) { \
+        fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(cudaGetLastError())); \
+        exit(EXIT_FAILURE); \
+    }
 
 __global__ void convolution_forward_kernel(
     double *input, double *output, double *weight, double *bias,
@@ -164,15 +170,15 @@ void CONVOLUTION_FORWARD_CUDA(
     size_t bias_size_bytes = output_channels * sizeof(double);
 
     // Allocate device memory
-    cudaMalloc((void **)&d_input, input_size_bytes);
-    cudaMalloc((void **)&d_output, output_size_bytes);
-    cudaMalloc((void **)&d_weight, weight_size_bytes);
-    cudaMalloc((void **)&d_bias, bias_size_bytes);
+    CHECK_CUDA_CALL(cudaMalloc((void **)&d_input, input_size_bytes));
+    CHECK_CUDA_CALL(cudaMalloc((void **)&d_output, output_size_bytes));
+    CHECK_CUDA_CALL(cudaMalloc((void **)&d_weight, weight_size_bytes));
+    CHECK_CUDA_CALL(cudaMalloc((void **)&d_bias, bias_size_bytes));
 
     // Copy data to device
-    cudaMemcpy(d_input, input, input_size_bytes, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_weight, weight, weight_size_bytes, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_bias, bias, bias_size_bytes, cudaMemcpyHostToDevice);
+    CHECK_CUDA_CALL(cudaMemcpy(d_input, input, input_size_bytes, cudaMemcpyHostToDevice));
+    CHECK_CUDA_CALL(cudaMemcpy(d_weight, weight, weight_size_bytes, cudaMemcpyHostToDevice));
+    CHECK_CUDA_CALL(cudaMemcpy(d_bias, bias, bias_size_bytes, cudaMemcpyHostToDevice));
 
     // Define CUDA grid and block dimensions
     dim3 blockDim(BLOCK_SIZE, BLOCK_SIZE);
@@ -186,14 +192,17 @@ void CONVOLUTION_FORWARD_CUDA(
         input_channels, input_size, output_channels, output_size, kernel_size
     );
 
+    // Synchronize GPU
+    CHECK_CUDA_CALL(cudaDeviceSynchronize());
+
     // Copy result back to host
-    cudaMemcpy(output, d_output, output_size_bytes, cudaMemcpyDeviceToHost);
+    CHECK_CUDA_CALL(cudaMemcpy(output, d_output, output_size_bytes, cudaMemcpyDeviceToHost));
 
     // Free device memory
-    cudaFree(d_input);
-    cudaFree(d_output);
-    cudaFree(d_weight);
-    cudaFree(d_bias);
+    CHECK_CUDA_CALL(cudaFree(d_input));
+    CHECK_CUDA_CALL(cudaFree(d_output));
+    CHECK_CUDA_CALL(cudaFree(d_weight));
+    CHECK_CUDA_CALL(cudaFree(d_bias));
 }
 
 
@@ -207,7 +216,9 @@ double relugrad(double y)
 	return y > 0;
 }
 
-static void forward(LeNet5 *lenet, Feature *features, double(*action)(double)) {
+static void forward(LeNet5 *lenet, Feature *features, double (*action)(double)) {
+    printf("Starting forward pass\n");
+
     // First convolutional layer
     CONVOLUTION_FORWARD_CUDA(
         (double *)features->input, (double *)features->layer1, 
@@ -215,6 +226,10 @@ static void forward(LeNet5 *lenet, Feature *features, double(*action)(double)) {
         INPUT_CHANNELS, INPUT_SIZE, LAYER1_CHANNELS, LAYER1_SIZE, KERNEL_SIZE
     );
     SUBSAMP_MAX_FORWARD(features->layer1, features->layer2);
+
+    // Debug log
+    printf("Layer 1 forward pass completed.\n");
+    fflush(stdout);
 
     // Second convolutional layer
     CONVOLUTION_FORWARD_CUDA(
@@ -224,6 +239,10 @@ static void forward(LeNet5 *lenet, Feature *features, double(*action)(double)) {
     );
     SUBSAMP_MAX_FORWARD(features->layer3, features->layer4);
 
+    // Debug log
+    printf("Layer 2 forward pass completed.\n");
+    fflush(stdout);
+
     // Third convolutional layer
     CONVOLUTION_FORWARD_CUDA(
         (double *)features->layer4, (double *)features->layer5, 
@@ -232,11 +251,12 @@ static void forward(LeNet5 *lenet, Feature *features, double(*action)(double)) {
     );
 
     // Fully connected layer
-    DOT_PRODUCT_FORWARD(
-        features->layer5, features->output, lenet->weight5_6, lenet->bias5_6, action
-    );
-}
+    DOT_PRODUCT_FORWARD(features->layer5, features->output, lenet->weight5_6, lenet->bias5_6, action);
 
+    // Finalize
+    printf("Forward pass completed.\n");
+    fflush(stdout);
+}
 
 
 static void backward(LeNet5 *lenet, LeNet5 *deltas, Feature *errors, Feature *features, double(*actiongrad)(double))
@@ -368,7 +388,7 @@ void Train(LeNet5 *lenet, image input, uint8 label)
 		((double *)lenet)[i] += ALPHA * ((double *)&deltas)[i];
 }
 
-uint8 Predict(LeNet5 *lenet, image input,uint8 count)
+uint8 Predict(LeNet5 *lenet, image input,uint8 count)s
 {
 	Feature features = { 0 };
 	load_input(&features, input);
