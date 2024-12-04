@@ -388,7 +388,7 @@ void Train(LeNet5 *lenet, image input, uint8 label)
 		((double *)lenet)[i] += ALPHA * ((double *)&deltas)[i];
 }
 
-uint8 Predict(LeNet5 *lenet, image input,uint8 count)s
+uint8 Predict(LeNet5 *lenet, image input,uint8 count)
 {
 	Feature features = { 0 };
 	load_input(&features, input);
