@@ -217,7 +217,6 @@ double relugrad(double y)
 }
 
 static void forward(LeNet5 *lenet, Feature *features, double (*action)(double)) {
-    printf("Starting forward pass\n");
 
     // First convolutional layer
     CONVOLUTION_FORWARD_CUDA(
@@ -228,7 +227,7 @@ static void forward(LeNet5 *lenet, Feature *features, double (*action)(double)) 
     SUBSAMP_MAX_FORWARD(features->layer1, features->layer2);
 
     // Debug log
-    printf("Layer 1 forward pass completed.\n");
+
     fflush(stdout);
 
     // Second convolutional layer
@@ -240,7 +239,7 @@ static void forward(LeNet5 *lenet, Feature *features, double (*action)(double)) 
     SUBSAMP_MAX_FORWARD(features->layer3, features->layer4);
 
     // Debug log
-    printf("Layer 2 forward pass completed.\n");
+
     fflush(stdout);
 
     // Third convolutional layer
@@ -254,7 +253,6 @@ static void forward(LeNet5 *lenet, Feature *features, double (*action)(double)) 
     DOT_PRODUCT_FORWARD(features->layer5, features->output, lenet->weight5_6, lenet->bias5_6, action);
 
     // Finalize
-    printf("Forward pass completed.\n");
     fflush(stdout);
 }
 
